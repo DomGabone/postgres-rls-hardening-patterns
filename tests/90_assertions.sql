@@ -181,4 +181,55 @@ begin
   raise notice 'T10 ok: administracao le tudo sob RLS';
 end $$;
 
+do $$
+declare n int;
+begin
+  set local role authenticated;
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000f', true);
+  begin
+    perform secrets.read('gateway_token');
+    raise exception 'T11 authenticated, mesmo administracao, alcancou o cofre';
+  exception when insufficient_privilege then
+    null;
+  end;
+  begin
+    perform count(*) from secrets.store;
+    raise exception 'T11 authenticated leu a tabela do cofre';
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset role;
+  select count(*) into n from public.functions_executable_by('anon', 'secrets');
+  n := n + (select count(*) from public.functions_executable_by('authenticated', 'secrets'));
+  if n <> 0 then raise exception 'T11 % funcoes do cofre executaveis por papeis do app', n; end if;
+  raise notice 'T11 ok: cofre fora do alcance de anon e authenticated';
+end $$;
+
+do $$
+declare v text; leaked int; trg int;
+begin
+  set local role service_role;
+  perform set_config('app.secrets_key', 'chave-local-somente-para-teste', true);
+  perform secrets.put('gateway_token', 'tok_abc123');
+  select secrets.read('gateway_token') into v;
+  if v <> 'tok_abc123' then raise exception 'T12 leitura devolveu valor errado'; end if;
+  reset role;
+  select count(*) into leaked from secrets.store where position('tok_abc123'::bytea in ciphertext) > 0;
+  if leaked <> 0 then raise exception 'T12 segredo gravado em texto puro'; end if;
+  select count(*) into trg
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace ns on ns.oid = c.relnamespace
+  where ns.nspname = 'secrets' and not t.tgisinternal;
+  if trg <> 0 then raise exception 'T12 cofre tem gatilho, e gatilho de auditoria copiaria o segredo'; end if;
+  begin
+    perform set_config('app.secrets_key', '', true);
+    perform secrets.read('gateway_token');
+    raise exception 'T12 leitura sem chave deveria falhar';
+  exception when invalid_parameter_value then
+    null;
+  end;
+  raise notice 'T12 ok: cofre cifrado, sem gatilho, chave fora do banco';
+end $$;
+
 select 'todas as asserções passaram' as resultado;

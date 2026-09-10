@@ -14,7 +14,9 @@ O esquema de exemplo é uma livraria fictícia com lojas, equipe, catálogo e pe
 
 **4. Trilha de auditoria imutável por permissão, não por disciplina.** A role da aplicação só lê a trilha, e mesmo assim sob RLS. Quem escreve é um gatilho `SECURITY DEFINER`, que grava como dono da função. Campos sensíveis são mascarados e campos ruidosos são excluídos por configuração em tabela, não por código. Ver `04_audit_trigger.sql` e a asserção T06.
 
-**5. Funções nascem fechadas.** `ALTER DEFAULT PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` antes de criar qualquer função, e grants explícitos só para o que a aplicação chama. Toda função de autorização usa `SECURITY DEFINER` com `search_path` vazio e nomes totalmente qualificados.
+**5. Segredo no banco só em cofre fechado, com a chave fora do banco.** Se um segredo precisa viver no banco, ele fica em esquema próprio, cifrado, sem privilégio nenhum para os papéis do app, lido por função `SECURITY DEFINER` concedida apenas ao papel de serviço. A chave de cifragem chega pela sessão do serviço, nunca é gravada. E a tabela do cofre não recebe gatilho de auditoria, porque a trilha copiaria o segredo em texto puro. Ver `07_secrets_store.sql` e as asserções T11 e T12. Em plataformas gerenciadas, o cofre nativo do provedor cumpre o mesmo papel.
+
+**6. Funções nascem fechadas.** `ALTER DEFAULT PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` antes de criar qualquer função, e grants explícitos só para o que a aplicação chama. Toda função de autorização usa `SECURITY DEFINER` com `search_path` vazio e nomes totalmente qualificados.
 
 ## Arquivos
 
@@ -27,7 +29,8 @@ O esquema de exemplo é uma livraria fictícia com lojas, equipe, catálogo e pe
 | `sql/04_audit_trigger.sql` | Gatilho genérico de auditoria em JSONB dirigido por `audit_config`. |
 | `sql/05_immutable_audit.sql` | Trilha somente leitura, TRUNCATE revogado em todo o esquema, privilégios padrão ajustados. |
 | `sql/06_function_exposure.sql` | Função de inventário do que cada role executa e o fechamento automático de tudo que `anon` ainda alcançava. |
-| `tests/90_assertions.sql` | Dez cenários com sessões reais por role e claim, que abortam o CI se algum padrão regredir. |
+| `sql/07_secrets_store.sql` | Cofre de segredos em esquema isolado, cifrado com chave de sessão, legível só pelo papel de serviço. |
+| `tests/90_assertions.sql` | Doze cenários com sessões reais por role e claim, que abortam o CI se algum padrão regredir. |
 
 ## Rodando localmente
 
